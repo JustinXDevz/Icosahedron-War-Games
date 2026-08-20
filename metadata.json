@@ -1,0 +1,6 @@
+{
+  "name": "Icosahedron War - Clash of Champions",
+  "description": "Interactive 3D spatial geometry and mental math battle game inspired by Clash of Champions Season 3. Features connected alphabet chain target sums (e.g. Target = 54), 3D icosahedron rotation, memory recall, territory conquest, tournament duel mode, and Dihya's reference method.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
