@@ -6,6 +6,7 @@ import { TournamentMode } from './components/TournamentMode';
 import { WarConquestMode } from './components/WarConquestMode';
 import { RapidFireMode } from './components/RapidFireMode';
 import { DihyaMethodLab } from './components/DihyaMethodLab';
+import { HowToPlayGuide } from './components/HowToPlayGuide';
 import { RuleModal } from './components/RuleModal';
 import { sounds } from './utils/soundEffects';
 
@@ -27,7 +28,7 @@ export default function App() {
       <Navbar
         currentMode={currentMode}
         onSelectMode={(mode) => setCurrentMode(mode)}
-        onOpenRules={() => setIsRulesOpen(true)}
+        onOpenRules={() => setCurrentMode('guide')}
       />
 
       {/* Main Content Area */}
@@ -37,9 +38,10 @@ export default function App() {
         {currentMode === 'war' && <WarConquestMode />}
         {currentMode === 'rapid' && <RapidFireMode />}
         {currentMode === 'lab' && <DihyaMethodLab />}
+        {currentMode === 'guide' && <HowToPlayGuide onSelectMode={(mode) => setCurrentMode(mode)} />}
       </main>
 
-      {/* Rules Modal */}
+      {/* Rules Modal (Quick Popup alternative) */}
       <RuleModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
 
       {/* Footer */}
@@ -58,11 +60,11 @@ export default function App() {
               id="btn-footer-rules"
               onClick={() => {
                 sounds.playClick();
-                setIsRulesOpen(true);
+                setCurrentMode('guide');
               }}
               className="text-cyan-400 hover:text-cyan-300 font-semibold underline underline-offset-2"
             >
-              View Official Guide
+              View Official Guide & Practice
             </button>
           </div>
         </div>

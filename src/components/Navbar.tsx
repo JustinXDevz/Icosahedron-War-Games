@@ -9,7 +9,7 @@ import {
   Target,
   Volume2,
   VolumeX,
-  HelpCircle,
+  BookOpen,
   Sparkles,
 } from 'lucide-react';
 
@@ -62,6 +62,12 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: <Compass className="w-4 h-4 text-indigo-400" />,
       badge: '3D Academy',
     },
+    {
+      id: 'guide',
+      label: 'How to Play',
+      icon: <BookOpen className="w-4 h-4 text-emerald-400" />,
+      badge: 'Guide',
+    },
   ];
 
   return (
@@ -94,7 +100,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Audio and Help Controls on Mobile */}
+          {/* Audio and Guide Controls on Mobile */}
           <div className="flex md:hidden items-center gap-2">
             <button
               id="btn-sound-mobile"
@@ -104,11 +110,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
             </button>
             <button
-              id="btn-rules-mobile"
-              onClick={onOpenRules}
-              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white"
+              id="btn-guide-mobile"
+              onClick={() => {
+                sounds.playClick();
+                onSelectMode('guide');
+              }}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-emerald-400"
             >
-              <HelpCircle className="w-4 h-4 text-cyan-400" />
+              <BookOpen className="w-4 h-4 text-emerald-400" />
             </button>
           </div>
         </div>
@@ -138,6 +147,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
                       isActive
                         ? 'bg-cyan-500 text-slate-950'
+                        : item.id === 'guide'
+                        ? 'bg-emerald-500/20 text-emerald-300'
                         : 'bg-slate-800 text-slate-400'
                     }`}
                   >
@@ -161,12 +172,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            id="btn-rules-desktop"
-            onClick={onOpenRules}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors"
+            id="btn-nav-guide-page"
+            onClick={() => {
+              sounds.playClick();
+              onSelectMode('guide');
+            }}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+              currentMode === 'guide'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-800 text-emerald-400 hover:text-emerald-300'
+            }`}
           >
-            <HelpCircle className="w-4 h-4 text-cyan-400" />
-            <span>Rules & Dihya Strategy</span>
+            <BookOpen className="w-4 h-4" />
+            <span>How to Play</span>
           </button>
         </div>
       </div>

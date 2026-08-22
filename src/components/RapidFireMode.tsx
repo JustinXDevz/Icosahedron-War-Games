@@ -5,10 +5,13 @@ import {
   GameQuestion,
   GameDifficulty,
   MemoryClockDuration,
+  ChallengeRecord,
+  SessionSummaryStats,
 } from '../types/game';
 import { generateIcosahedronFaces, generateIcosahedronVertices } from '../utils/icosahedronGeometry';
 import { generateQuestion } from '../utils/questionGenerator';
 import { ThreeIcosahedron } from './ThreeIcosahedron';
+import { SessionSummaryView } from './SessionSummaryView';
 import { sounds } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -51,6 +54,10 @@ export const RapidFireMode: React.FC = () => {
     return Number(localStorage.getItem('coc_rapid_highscore') || 0);
   });
 
+  // Performance metrics tracking
+  const [records, setRecords] = useState<ChallengeRecord[]>([]);
+  const [questionStartTime, setQuestionStartTime] = useState<number | null>(null);
+
   const typeInputRef = useRef<HTMLInputElement | null>(null);
 
   // Start Rapid Fire Challenge
@@ -62,6 +69,8 @@ export const RapidFireMode: React.FC = () => {
     setScore(0);
     setStreak(0);
     setMaxStreak(0);
+    setRecords([]);
+    setQuestionStartTime(null);
     setMemoTime(clockSetting === 0 ? 0 : clockSetting);
     setGameTime(60);
     setGameState('memorize');
@@ -122,6 +131,7 @@ export const RapidFireMode: React.FC = () => {
     const q = generateQuestion(faces, vertices, difficulty);
     setCurrentQuestion(q);
     setTypedAnswer('');
+    setQuestionStartTime(Date.now());
     setTimeout(() => {
       typeInputRef.current?.focus();
     }, 50);
@@ -131,7 +141,22 @@ export const RapidFireMode: React.FC = () => {
   const handleAnswer = (option: string | number) => {
     if (gameState !== 'playing' || !currentQuestion) return;
 
+    const elapsedMs = questionStartTime ? Date.now() - questionStartTime : 0;
     const isCorrect = String(option).trim().toLowerCase() === String(currentQuestion.correctAnswer).trim().toLowerCase();
+
+    // Log record
+    const rec: ChallengeRecord = {
+      id: `${currentQuestion.id}-${records.length + 1}`,
+      challengeIndex: records.length + 1,
+      title: currentQuestion.prompt || `Question #${records.length + 1}`,
+      details: currentQuestion.prompt,
+      targetOrAnswer: currentQuestion.correctAnswer,
+      userSubmission: option,
+      isCorrect,
+      responseTimeMs: elapsedMs,
+      attemptsCount: 1,
+    };
+    setRecords((prev) => [...prev, rec]);
 
     if (isCorrect) {
       sounds.playCorrect();
@@ -155,6 +180,31 @@ export const RapidFireMode: React.FC = () => {
     e.preventDefault();
     if (!typedAnswer.trim()) return;
     handleAnswer(typedAnswer.trim());
+  };
+
+  // Compute summary metrics for gameover
+  const totalChallenges = records.length;
+  const correctChallenges = records.filter((r) => r.isCorrect).length;
+  const accuracyPercentage = totalChallenges > 0 ? (correctChallenges / totalChallenges) * 100 : 0;
+  const totalTimeMs = records.reduce((sum, r) => sum + r.responseTimeMs, 0);
+  const averageResponseTimeSec = totalChallenges > 0 ? totalTimeMs / totalChallenges / 1000 : 0;
+  const fastestResponseTimeSec =
+    records.filter((r) => r.isCorrect).length > 0
+      ? Math.min(...records.filter((r) => r.isCorrect).map((r) => r.responseTimeMs)) / 1000
+      : 0;
+
+  const rapidSummaryStats: SessionSummaryStats = {
+    modeName: 'Rapid Fire 60s Sprint',
+    totalChallenges,
+    correctChallenges,
+    totalAttempts: totalChallenges,
+    accuracyPercentage,
+    averageResponseTimeSec,
+    fastestResponseTimeSec,
+    totalScore: score,
+    maxStreak,
+    records,
+    completedAt: new Date(),
   };
 
   return (
@@ -393,48 +443,14 @@ export const RapidFireMode: React.FC = () => {
         </div>
       )}
 
-      {/* GAMEOVER SPRINT RESULTS */}
+      {/* GAMEOVER SPRINT RESULTS WITH FULL SESSION SUMMARY */}
       {gameState === 'gameover' && (
-        <div className="bg-slate-900/90 rounded-3xl p-8 border border-slate-800 shadow-2xl text-center space-y-6 animate-fadeIn">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-400 text-3xl shadow-xl shadow-amber-500/20">
-            <Trophy className="w-10 h-10" />
-          </div>
-
-          <div className="space-y-1">
-            <h2 className="text-3xl font-black text-white">Sprint Completed!</h2>
-            <p className="text-xs text-slate-400">Great 3D memory recall speed under pressure.</p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Score</span>
-              <div className="text-2xl font-black text-cyan-400">{score}</div>
-            </div>
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Max Streak</span>
-              <div className="text-2xl font-black text-amber-400">{maxStreak}</div>
-            </div>
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Best Score</span>
-              <div className="text-2xl font-black text-emerald-400">{highScore}</div>
-            </div>
-          </div>
-
-          <div className="flex justify-center gap-3 pt-2">
-            <button
-              id="btn-play-again-rapid"
-              onClick={startGame}
-              className="px-8 py-3.5 bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-400 hover:to-rose-500 text-slate-950 font-black rounded-2xl shadow-xl text-sm transition-all transform hover:scale-[1.02]"
-            >
-              Play Another Sprint →
-            </button>
-            <button
-              onClick={() => setGameState('idle')}
-              className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl text-sm"
-            >
-              Sprint Menu
-            </button>
-          </div>
+        <div className="space-y-6">
+          <SessionSummaryView
+            stats={rapidSummaryStats}
+            onRestart={startGame}
+            onContinue={() => setGameState('idle')}
+          />
         </div>
       )}
     </div>

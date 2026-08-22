@@ -1,4 +1,4 @@
-export type GameMode = 'target_sum' | 'tournament' | 'war' | 'rapid' | 'lab';
+export type GameMode = 'target_sum' | 'tournament' | 'war' | 'rapid' | 'lab' | 'guide';
 
 export type GameDifficulty = 'normal' | 'hard' | 'extreme_coc';
 
@@ -108,3 +108,30 @@ export interface PlayerStats {
   totalAnswered: number;
   specialEnergy: number; // 0 to 100
 }
+
+export interface ChallengeRecord {
+  id: string;
+  challengeIndex: number;
+  title: string;
+  details?: string;
+  targetOrAnswer: string | number;
+  userSubmission: string | number;
+  isCorrect: boolean;
+  responseTimeMs: number; // Milliseconds taken from start to submission
+  attemptsCount: number;
+}
+
+export interface SessionSummaryStats {
+  modeName: string;
+  totalChallenges: number;
+  correctChallenges: number;
+  totalAttempts: number;
+  accuracyPercentage: number; // e.g. 87.5
+  averageResponseTimeSec: number; // e.g. 3.4
+  fastestResponseTimeSec: number; // e.g. 1.2
+  totalScore: number;
+  maxStreak: number;
+  records: ChallengeRecord[];
+  completedAt: Date;
+}
+

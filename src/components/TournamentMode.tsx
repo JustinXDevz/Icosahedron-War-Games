@@ -6,12 +6,15 @@ import {
   GameQuestion,
   GameDifficulty,
   MemoryClockDuration,
+  ChallengeRecord,
+  SessionSummaryStats,
 } from '../types/game';
 import { COC_CHAMPIONS } from '../data/champions';
 import { generateIcosahedronFaces, generateIcosahedronVertices } from '../utils/icosahedronGeometry';
 import { generateQuestion } from '../utils/questionGenerator';
 import { ThreeIcosahedron } from './ThreeIcosahedron';
 import { UnfoldedNetView } from './UnfoldedNetView';
+import { SessionSummaryView } from './SessionSummaryView';
 import { sounds } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -83,6 +86,10 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
   const [aiAnswered, setAiAnswered] = useState<boolean>(false);
   const [aiMessage, setAiMessage] = useState<string>('');
 
+  // Performance metrics tracking
+  const [matchRecords, setMatchRecords] = useState<ChallengeRecord[]>([]);
+  const [roundStartTime, setRoundStartTime] = useState<number | null>(null);
+
   // AI reaction timeout ref
   const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typeInputRef = useRef<HTMLInputElement | null>(null);
@@ -100,6 +107,8 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
     setPlayerScore(0);
     setOpponentScore(0);
     setRoundNumber(1);
+    setMatchRecords([]);
+    setRoundStartTime(null);
     const newFaces = generateIcosahedronFaces();
     setFaces(newFaces);
     setVertices(generateIcosahedronVertices(newFaces));
@@ -150,6 +159,7 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
     setAiAnswered(false);
     setAiMessage('');
     setTournamentPhase('battle');
+    setRoundStartTime(Date.now());
 
     setTimeout(() => {
       typeInputRef.current?.focus();
@@ -165,11 +175,27 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
       setIsAnswerLocked((locked) => {
         if (!locked) {
           setAiAnswered(true);
+          const elapsed = Date.now() - (roundStartTime || Date.now());
           if (isAiCorrect) {
             sounds.playWrong(); // AI stole it
             setOpponentScore((s) => s + 15);
             setAiMessage(`${champion.name} locked in the sum first! (+15 pts)`);
             setAnswerStatus('wrong');
+            // Log record
+            setMatchRecords((prev) => [
+              ...prev,
+              {
+                id: `${q.id}-${prev.length + 1}`,
+                challengeIndex: prev.length + 1,
+                title: q.prompt || `Round #${prev.length + 1}`,
+                details: `${champion.name} buzzed in first (${Math.round(aiSpeed / 100) / 10}s)`,
+                targetOrAnswer: q.correctAnswer,
+                userSubmission: `${champion.name} Buzzed`,
+                isCorrect: false,
+                responseTimeMs: elapsed,
+                attemptsCount: 1,
+              },
+            ]);
           } else {
             setAiMessage(`${champion.name} miscalculated! Opportunity to steal!`);
           }
@@ -188,6 +214,21 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
       setIsAnswerLocked(true);
       setAnswerStatus('timeout');
       sounds.playWrong();
+      const elapsed = Date.now() - (roundStartTime || Date.now());
+      setMatchRecords((prev) => [
+        ...prev,
+        {
+          id: `${currentQuestion.id}-${prev.length + 1}`,
+          challengeIndex: prev.length + 1,
+          title: currentQuestion.prompt || `Round #${prev.length + 1}`,
+          details: 'Time expired before submission',
+          targetOrAnswer: currentQuestion.correctAnswer,
+          userSubmission: 'Timeout',
+          isCorrect: false,
+          responseTimeMs: elapsed,
+          attemptsCount: 1,
+        },
+      ]);
       return;
     }
 
@@ -199,7 +240,7 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [tournamentPhase, questionTimer, isAnswerLocked, currentQuestion]);
+  }, [tournamentPhase, questionTimer, isAnswerLocked, currentQuestion, roundStartTime]);
 
   // Handle player submitting answer
   const handleSubmitAnswer = (answer: string | number) => {
@@ -210,7 +251,22 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
     setSelectedAnswer(answer);
     setIsAnswerLocked(true);
 
+    const elapsedMs = roundStartTime ? Date.now() - roundStartTime : 0;
     const isCorrect = String(answer).trim().toLowerCase() === String(currentQuestion.correctAnswer).trim().toLowerCase();
+
+    // Log record
+    const rec: ChallengeRecord = {
+      id: `${currentQuestion.id}-${matchRecords.length + 1}`,
+      challengeIndex: matchRecords.length + 1,
+      title: currentQuestion.prompt || `Round #${matchRecords.length + 1}`,
+      details: currentQuestion.prompt,
+      targetOrAnswer: currentQuestion.correctAnswer,
+      userSubmission: answer,
+      isCorrect,
+      responseTimeMs: elapsedMs,
+      attemptsCount: 1,
+    };
+    setMatchRecords((prev) => [...prev, rec]);
 
     if (isCorrect) {
       sounds.playCorrect();
@@ -254,6 +310,31 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
   const advanceToNextStage = () => {
     sounds.playClick();
     startMatch(currentStage + 1);
+  };
+
+  // Compute summary stats for the match
+  const totalChallenges = matchRecords.length;
+  const correctChallenges = matchRecords.filter((r) => r.isCorrect).length;
+  const accuracyPercentage = totalChallenges > 0 ? (correctChallenges / totalChallenges) * 100 : 0;
+  const totalTimeMs = matchRecords.reduce((sum, r) => sum + r.responseTimeMs, 0);
+  const averageResponseTimeSec = totalChallenges > 0 ? totalTimeMs / totalChallenges / 1000 : 0;
+  const fastestResponseTimeSec =
+    matchRecords.filter((r) => r.isCorrect).length > 0
+      ? Math.min(...matchRecords.filter((r) => r.isCorrect).map((r) => r.responseTimeMs)) / 1000
+      : 0;
+
+  const tourneySummaryStats: SessionSummaryStats = {
+    modeName: `Tournament Match vs ${champion.name}`,
+    totalChallenges,
+    correctChallenges,
+    totalAttempts: totalChallenges,
+    accuracyPercentage,
+    averageResponseTimeSec,
+    fastestResponseTimeSec,
+    totalScore: playerScore,
+    maxStreak: 0,
+    records: matchRecords,
+    completedAt: new Date(),
   };
 
   return (
@@ -757,79 +838,96 @@ export const TournamentMode: React.FC<TournamentModeProps> = () => {
 
       {/* STAGE RESULT */}
       {tournamentPhase === 'round_result' && (
-        <div className="bg-slate-900/90 rounded-3xl p-8 border border-slate-800 shadow-2xl text-center space-y-6 animate-fadeIn">
-          {playerScore >= targetScore ? (
-            <div className="space-y-4">
-              <div className="w-20 h-20 mx-auto rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 text-4xl shadow-xl shadow-emerald-500/20">
-                <Trophy className="w-10 h-10" />
+        <div className="space-y-6">
+          <div className="bg-slate-900/90 rounded-3xl p-8 border border-slate-800 shadow-2xl text-center space-y-6 animate-fadeIn">
+            {playerScore >= targetScore ? (
+              <div className="space-y-4">
+                <div className="w-20 h-20 mx-auto rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 text-4xl shadow-xl shadow-emerald-500/20">
+                  <Trophy className="w-10 h-10" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white">
+                  STAGE {currentStage + 1} DEFEATED: {champion.name}
+                </h2>
+                <p className="text-sm text-slate-300 max-w-md mx-auto">
+                  You outperformed {champion.name} with a final score of {playerScore} to {opponentScore}!
+                </p>
+                <div className="flex justify-center gap-4 pt-2">
+                  <button
+                    id="btn-advance-stage"
+                    onClick={advanceToNextStage}
+                    className="px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-2xl shadow-lg transition-all text-sm"
+                  >
+                    Face Next Champion →
+                  </button>
+                </div>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white">
-                STAGE {currentStage + 1} DEFEATED: {champion.name}
-              </h2>
-              <p className="text-sm text-slate-300 max-w-md mx-auto">
-                You outperformed {champion.name} with a final score of {playerScore} to {opponentScore}!
-              </p>
-              <div className="flex justify-center gap-4 pt-2">
-                <button
-                  id="btn-advance-stage"
-                  onClick={advanceToNextStage}
-                  className="px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-2xl shadow-lg transition-all text-sm"
-                >
-                  Face Next Champion →
-                </button>
+            ) : (
+              <div className="space-y-4">
+                <div className="w-20 h-20 mx-auto rounded-2xl bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center text-rose-400 text-4xl shadow-xl">
+                  <ShieldAlert className="w-10 h-10" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white">
+                  ELIMINATED BY {champion.name}
+                </h2>
+                <p className="text-sm text-slate-300 max-w-md mx-auto">
+                  {champion.name} reached {opponentScore} points first ({playerScore} pts). Re-anchor your alphabet values and try again!
+                </p>
+                <div className="flex justify-center gap-4 pt-2">
+                  <button
+                    id="btn-retry-match"
+                    onClick={() => startMatch(currentStage)}
+                    className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl transition-all text-sm"
+                  >
+                    Rematch {champion.name}
+                  </button>
+                  <button
+                    id="btn-return-lobby"
+                    onClick={() => setTournamentPhase('lobby')}
+                    className="px-6 py-3.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl transition-all text-sm"
+                  >
+                    Return to Gauntlet
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="w-20 h-20 mx-auto rounded-2xl bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center text-rose-400 text-4xl shadow-xl">
-                <ShieldAlert className="w-10 h-10" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white">
-                ELIMINATED BY {champion.name}
-              </h2>
-              <p className="text-sm text-slate-300 max-w-md mx-auto">
-                {champion.name} reached {opponentScore} points first ({playerScore} pts). Re-anchor your alphabet values and try again!
-              </p>
-              <div className="flex justify-center gap-4 pt-2">
-                <button
-                  id="btn-retry-match"
-                  onClick={() => startMatch(currentStage)}
-                  className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl transition-all text-sm"
-                >
-                  Rematch {champion.name}
-                </button>
-                <button
-                  id="btn-return-lobby"
-                  onClick={() => setTournamentPhase('lobby')}
-                  className="px-6 py-3.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl transition-all text-sm"
-                >
-                  Return to Gauntlet
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Session Summary Performance Analytics */}
+          <SessionSummaryView
+            stats={tourneySummaryStats}
+            onRestart={() => startMatch(currentStage)}
+            onContinue={() => setTournamentPhase('lobby')}
+          />
         </div>
       )}
 
       {/* GRAND CHAMPION CROWNED */}
       {tournamentPhase === 'champion_crowned' && (
-        <div className="bg-slate-900/90 rounded-3xl p-8 border border-amber-500/40 shadow-2xl text-center space-y-6 animate-fadeIn">
-          <div className="w-24 h-24 mx-auto rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/30">
-            <Award className="w-12 h-12" />
+        <div className="space-y-6">
+          <div className="bg-slate-900/90 rounded-3xl p-8 border border-amber-500/40 shadow-2xl text-center space-y-6 animate-fadeIn">
+            <div className="w-24 h-24 mx-auto rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/30">
+              <Award className="w-12 h-12" />
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400">
+              CLASH OF CHAMPIONS WINNER
+            </h2>
+            <p className="text-sm text-slate-300 max-w-lg mx-auto">
+              You conquered all Clash of Champions Season 3 contestants across the 20-face Icosahedron Alphabet War! Your multi-alphabet 3D memory and calculation speed is unmatched.
+            </p>
+            <button
+              id="btn-celebrate-finish"
+              onClick={() => setTournamentPhase('lobby')}
+              className="px-8 py-3.5 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-black rounded-2xl shadow-xl transition-all text-sm"
+            >
+              Play Again / Gauntlet Select
+            </button>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400">
-            CLASH OF CHAMPIONS WINNER
-          </h2>
-          <p className="text-sm text-slate-300 max-w-lg mx-auto">
-            You conquered all Clash of Champions Season 3 contestants across the 20-face Icosahedron Alphabet War! Your multi-alphabet 3D memory and calculation speed is unmatched.
-          </p>
-          <button
-            id="btn-celebrate-finish"
-            onClick={() => setTournamentPhase('lobby')}
-            className="px-8 py-3.5 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-black rounded-2xl shadow-xl transition-all text-sm"
-          >
-            Play Again / Gauntlet Select
-          </button>
+
+          <SessionSummaryView
+            stats={tourneySummaryStats}
+            onRestart={() => startMatch(0)}
+            onContinue={() => setTournamentPhase('lobby')}
+          />
         </div>
       )}
     </div>
